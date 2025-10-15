@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Reloj Mundial</title>
+  <style>
+    :root{
+      --bg1: linear-gradient(135deg,#0f172a,#0b2545);
+      --card: rgba(255,255,255,0.05);
+      --glass: rgba(255,255,255,0.06);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;
+      background:var(--bg1);
+      color:#e6eef8;
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:18px;
+    }
+    .app{
+      width:100%;
+      max-width:980px;
+    }
+    header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin-bottom:14px;
+    }
+    h1{
+      margin:0;
+      font-size:20px;
+      letter-spacing:0.2px;
+    }
+    .controls{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+    select, button{
+      font-size:15px;
+      padding:8px 10px;
+      border-radius:10px;
+      border:none;
+      background:var(--glass);
+      color:inherit;
+      outline: none;
+    }
+    button.primary{
+      background:#16a34a;
+      color:#04120b;
+      font-weight:700;
+    }
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+      gap:12px;
+    }
+    .card{
+      background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02));
+      border-radius:14px;
+      padding:14px;
+      box-shadow: 0 6px 18px rgba(2,6,23,0.6);
+      border: 1px solid rgba(255,255,255,0.03);
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+      min-height:110px;
+      position:relative;
+    }
+    .city-row{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+    }
+    .city-name{
+      font-weight:700;
+      font-size:16px;
+    }
+    .tz{
+      font-size:12px;
+      opacity:0.8;
+    }
+    .time{
+      font-size:28px;
+      font-weight:800;
+      letter-spacing:1px;
+    }
+    .date{
+      font-size:12px;
+      opacity:0.9;
+    }
+    .small-btn{
+      position:absolute;
+      right:8px;
+      top:8px;
+      background:transparent;
+      border:none;
+      color:rgba(255,255,255,0.6);
+      font-weight:700;
+      border-radius:8px;
+      padding:6px;
+      cursor:pointer;
+    }
+    .footer-note{
+      text-align:center;
+      margin-top:12px;
+      opacity:0.7;
+      font-size:13px;
+    }
+
+    /* responsive tweaks */
+    @media (max-width:420px){
+      h1{font-size:18px}
+      .time{font-size:22px}
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>🌍 Reloj Mundial</h1>
+      <div class="controls">
+        <label for="tzSelect" style="display:none">Zona</label>
+        <select id="tzSelect" aria-label="Elegir zona horaria"></select>
+        <button id="addBtn" class="primary">Agregar</button>
+        <button id="resetBtn">Restablecer</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="grid" id="cards"></div>
+      <p class="footer-note">Se actualiza automáticamente cada segundo. Podés agregar o quitar ciudades.</p>
+    </main>
+  </div>
+
+  <script>
+    // Lista útil de zonas y nombres amigables (puedes expandirla)
+    const PRESET = [
+      {label: "UTC", tz: "UTC"},
+      {label: "Montevideo (Uruguay)", tz: "America/Montevideo"},
+      {label: "Buenos Aires (Argentina)", tz: "America/Argentina/Buenos_Aires"},
+      {label: "Santiago (Chile)", tz: "America/Santiago"},
+      {label: "São Paulo (Brasil)", tz: "America/Sao_Paulo"},
+      {label: "Nueva York (USA)", tz: "America/New_York"},
+      {label: "Los Ángeles (USA)", tz: "America/Los_Angeles"},
+      {label: "Londres (Reino Unido)", tz: "Europe/London"},
+      {label: "Madrid (España)", tz: "Europe/Madrid"},
+      {label: "París (Francia)", tz: "Europe/Paris"},
+      {label: "Berlín (Alemania)", tz: "Europe/Berlin"},
+      {label: "Tokio (Japón)", tz: "Asia/Tokyo"},
+      {label: "Seúl (Corea)", tz: "Asia/Seoul"},
+      {label: "Sídney (Australia)", tz: "Australia/Sydney"},
+      {label: "Hong Kong", tz: "Asia/Hong_Kong"},
+      {label: "El Cairo (Egipto)", tz: "Africa/Cairo"}
+    ];
+
+    const tzSelect = document.getElementById("tzSelect");
+    const cards = document.getElementById("cards");
+    const addBtn = document.getElementById("addBtn");
+    const resetBtn = document.getElementById("resetBtn");
+
+    // Cargar opciones en el select (usar PRESET)
+    function populateSelect() {
+      tzSelect.innerHTML = PRESET.map(p => `<option value="${p.tz}">${p.label}</option>`).join("");
+    }
+
+    // Guardar/recuperar en localStorage para mantener selección en el móvil
+    function saveList(list) {
+      localStorage.setItem("worldClockList_v1", JSON.stringify(list));
+    }
+    function loadList() {
+      try {
+        const raw = localStorage.getItem("worldClockList_v1");
+        if (!raw) return PRESET.slice(0,6).map(p=>p.tz); // por defecto algunas
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed) || parsed.length === 0) return PRESET.slice(0,6).map(p=>p.tz);
+        return parsed;
+      } catch(e){
+        return PRESET.slice(0,6).map(p=>p.tz);
+      }
+    }
+
+    // Crear tarjeta DOM para una zona horaria
+    function createCard(tz) {
+      const name = PRESET.find(p=>p.tz===tz)?.label ?? tz;
+      const card = document.createElement("div");
+      card.className = "card";
+      card.setAttribute("data-tz", tz);
+      card.innerHTML = `
+        <button class="small-btn remove" title="Eliminar">✕</button>
+        <div class="city-row">
+          <div>
+            <div class="city-name">${name}</div>
+            <div class="tz">${tz}</div>
+          </div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:center;">
+          <div class="time" aria-live="polite">--:--:--</div>
+          <div class="date">Cargando fecha...</div>
+        </div>
+      `;
+      // evento para eliminar
+      card.querySelector(".remove").addEventListener("click", ()=>{
+        removeTimezone(tz);
+      });
+      return card;
+    }
+
+    // Renderizar lista completa
+    function renderList(list) {
+      cards.innerHTML = "";
+      list.forEach(tz=>{
+        cards.appendChild(createCard(tz));
+      });
+    }
+
+    // Actualizar horas en las tarjetas
+    function updateTimes() {
+      const nodes = document.querySelectorAll(".card");
+      const now = new Date();
+      nodes.forEach(node=>{
+        const tz = node.getAttribute("data-tz");
+        // usar Intl.DateTimeFormat para zona horaria
+        try {
+          const timeStr = new Intl.DateTimeFormat('es-ES', {
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+            hour12: false, timeZone: tz
+          }).format(now);
+          const dateStr = new Intl.DateTimeFormat('es-ES', {
+            weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
+            timeZone: tz
+          }).format(now);
+          node.querySelector(".time").textContent = timeStr;
+          node.querySelector(".date").textContent = dateStr;
+        } catch(e) {
+          node.querySelector(".time").textContent = "—";
+          node.querySelector(".date").textContent = "Zona inválida";
+        }
+      });
+    }
+
+    // Añadir timezone (si no existe)
+    function addTimezone(tz) {
+      const list = loadList();
+      if (list.includes(tz)) {
+        alert("Ya está agregada esa zona.");
+        return;
+      }
+      list.push(tz);
+      saveList(list);
+      renderList(list);
+      updateTimes();
+    }
+
+    // Eliminar timezone
+    function removeTimezone(tz) {
+      let list = loadList();
+      list = list.filter(x => x !== tz);
+      saveList(list);
+      renderList(list);
+      updateTimes();
+    }
+
+    // Restablecer a valores por defecto
+    function resetDefault() {
+      const def = PRESET.slice(0,6).map(p=>p.tz);
+      saveList(def);
+      renderList(def);
+      updateTimes();
+    }
+
+    // Iniciar
+    function init() {
+      populateSelect();
+
+      // Rellenar select con PRESET extra (además de los labels)
+      // Cargar lista guardada (o por defecto)
+      const list = loadList();
+      renderList(list);
+      updateTimes();
+
+      // Actualizar cada segundo
+      setInterval(updateTimes, 1000);
+
+      addBtn.addEventListener("click", ()=>{
+        const tz = tzSelect.value;
+        if (!tz) return;
+        addTimezone(tz);
+      });
+
+      // permitir agregar con Enter cuando el select está enfocado
+      tzSelect.addEventListener("keydown", (e)=>{
+        if (e.key === "Enter") addBtn.click();
+      });
+
+      resetBtn.addEventListener("click", ()=>{
+        if (confirm("¿Restablecer las ciudades a las predeterminadas?")) resetDefault();
+      });
+    }
+
+    // Ejecutar init cuando document cargue
+    document.addEventListener("DOMContentLoaded", init);
+  </script>
+</body>
+</html>
